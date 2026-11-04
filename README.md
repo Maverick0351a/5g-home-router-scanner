@@ -1,6 +1,6 @@
-# Router Security Scanner (`router-security-scanner`)
+# 5G Home Internet Router Security Scanner (`5g-home-router-scanner`)
 
-**Standalone security and privacy scanner for home routers and ISP captive-portal bundles across Verizon 5G Home (`192.168.1.1`), Xfinity Home Internet (`10.0.0.1` RDK-B XB6/XB7/XB8), and T-Mobile 5G Home (`192.168.12.1`).**
+**Standalone security and privacy scanner for 5G Home Internet routers and ISP captive-portal bundles across Verizon 5G Home (`192.168.1.1`), T-Mobile 5G Home (`192.168.12.1`), and Xfinity Home Internet (`10.0.0.1` RDK-B XB6/XB7/XB8).**
 
 ---
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Router Security Scanner (router-security-scanner v1.0.0)
-========================================================
-Standalone static & configuration security scanner for home routers and ISP
-captive-portal web bundles across:
+5G Home Internet Router Security Scanner (5g-home-router-scanner v1.0.0)
+========================================================================
+Standalone static & configuration security scanner for 5G Home Internet routers
+and ISP captive-portal web bundles across:
   - Verizon 5G Home Gateways (Askey ASK-NCM1100 / WNC CGI & JS bundles)
-  - Xfinity Home Internet Gateways (RDK-B XB6/XB7/XB8 .jst / actionHandler scripts)
   - T-Mobile 5G Home Gateways (TMI web bundles)
+  - Xfinity Home Internet Gateways (RDK-B XB6/XB7/XB8 .jst / actionHandler scripts)
 
 Detects CWE-522, CWE-836, CWE-798, CWE-321, CWE-329, CWE-95, CWE-319, and CWE-352
 weaknesses and exports human-readable JSON or SARIF v2.1.0 reports.

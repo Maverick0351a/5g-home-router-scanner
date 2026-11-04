@@ -1,31 +1,28 @@
 #!/usr/bin/env python3
 """
-Offline Unit Test Suite for Router Security Scanner (v1.0.0)
+Offline Unit Test Suite for 5G Home Internet Router Security Scanner (v1.1.0)
 """
 
 import tempfile
 import unittest
 from pathlib import Path
 
-from router_scanner import RouterSecurityScanner
+from router_scanner import RouterSecurityScanner, render_scanner_ui_html
 
 
 class TestRouterSecurityScanner(unittest.TestCase):
     def test_1_detects_verizon_and_xfinity_patterns_and_exports_sarif(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            # 1. Synthetic CGI digest exposure + eval() sink
             (root / "cgi_sample.js").write_text(
                 'addCfg("user_userPass", "admin", "' + ("a" * 128) + '");\n'
                 'eval("ArcBase._t=function()");\n',
                 encoding="utf-8",
             )
-            # 2. Synthetic captive portal static AES key + IV reuse
             (root / "portal_bundle.js").write_text(
                 'var k = Utf8.parse("SYNTHKEY12345678"); CryptoJS.AES.encrypt(d, k, { iv: k });\n',
                 encoding="utf-8",
             )
-            # 3. Synthetic Xfinity RDK-B actionHandler mutation reference
             (root / "network_setup.jst").write_text(
                 '$.post("actionHandler/ajaxSet_Reset_Restore.jst", { resetInfo: "Router" });\n',
                 encoding="utf-8",
@@ -41,6 +38,10 @@ class TestRouterSecurityScanner(unittest.TestCase):
             sarif = RouterSecurityScanner.to_sarif(findings)
             self.assertEqual(sarif["version"], "2.1.0")
             self.assertEqual(len(sarif["runs"][0]["results"]), len(findings))
+
+            html = render_scanner_ui_html("192.168.1.1", findings)
+            self.assertIn('<meta name="color-scheme" content="light dark">', html)
+            self.assertIn("What Is My 5G Home Router Leaking?", html)
 
 
 if __name__ == "__main__":

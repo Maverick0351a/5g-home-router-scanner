@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-5G Home Internet Router Security Scanner (5g-home-router-scanner v1.1.0)
+5G Home Internet Router Security Scanner (5g-home-router-scanner v1.2.1)
 ========================================================================
 "What Is My 5G Cube Leaking?" — Standalone static & live configuration security
 scanner for 5G Home Internet routers and ISP captive-portal bundles across:
@@ -9,14 +9,15 @@ scanner for 5G Home Internet routers and ISP captive-portal bundles across:
   - Xfinity Home Internet Gateways (RDK-B XB6/XB7/XB8 at 10.0.0.1)
 
 Includes:
-  - Static Bundle Scanner (`--bundle-dir`) + SARIF v2.1.0 Exporter (`--sarif-out`)
-  - Live Router Endpoint Auditor (`--scan-live --host 192.168.1.1`)
-  - Interactive Dark-Mode Local Web Control Center (`--ui` at http://127.0.0.1:8891/)
+  - Static Bundle Scanner (`scan-code <dir>` / `--bundle-dir`) + SARIF v2.1.0 Exporter (`--format sarif` / `--sarif-out`)
+  - Live Router Endpoint Auditor (`scan-live` / `--scan-live --host 192.168.1.1`)
+  - Interactive Dark-Mode Local Web Control Center (`ui` / `--ui` at http://127.0.0.1:8891/)
 """
 
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import urllib.request
@@ -36,6 +37,7 @@ class Finding:
     file_path: str
     evidence_snippet: str
     remediation: str
+    line_number: int = 1
 
 
 class RouterSecurityScanner:
@@ -105,9 +107,9 @@ class RouterSecurityScanner:
     def scan_text(cls, content: str, source_name: str) -> List[Finding]:
         findings: List[Finding] = []
         for rule in cls.RULES:
-            match = rule["pattern"].search(content)
-            if match:
+            for match in rule["pattern"].finditer(content):
                 snippet = match.group(0)[:120].replace("\n", " ")
+                line_num = content.count("\n", 0, match.start()) + 1
                 findings.append(
                     Finding(
                         rule_id=rule["rule_id"],
@@ -118,6 +120,7 @@ class RouterSecurityScanner:
                         file_path=source_name,
                         evidence_snippet=snippet,
                         remediation=rule["remediation"],
+                        line_number=line_num,
                     )
                 )
         return findings
@@ -198,6 +201,19 @@ class RouterSecurityScanner:
 
     @staticmethod
     def to_sarif(findings: List[Finding]) -> Dict[str, Any]:
+        unique_rules: List[Dict[str, Any]] = []
+        seen_rule_ids = set()
+        for f in findings:
+            if f.rule_id not in seen_rule_ids:
+                seen_rule_ids.add(f.rule_id)
+                unique_rules.append(
+                    {
+                        "id": f.rule_id,
+                        "shortDescription": {"text": f.title},
+                        "help": {"text": f.remediation},
+                        "properties": {"cwe": f.cwe, "cvssV31": f.cvss_v31},
+                    }
+                )
         return {
             "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
             "version": "2.1.0",
@@ -206,16 +222,8 @@ class RouterSecurityScanner:
                     "tool": {
                         "driver": {
                             "name": "5G Home Internet Router Security Scanner",
-                            "version": "1.1.0",
-                            "rules": [
-                                {
-                                    "id": f.rule_id,
-                                    "shortDescription": {"text": f.title},
-                                    "help": {"text": f.remediation},
-                                    "properties": {"cwe": f.cwe, "cvssV31": f.cvss_v31},
-                                }
-                                for f in findings
-                            ],
+                            "version": "1.2.1",
+                            "rules": unique_rules,
                         }
                     },
                     "results": [
@@ -227,6 +235,7 @@ class RouterSecurityScanner:
                                 {
                                     "physicalLocation": {
                                         "artifactLocation": {"uri": f.file_path},
+                                        "region": {"startLine": max(1, f.line_number)},
                                     }
                                 }
                             ],
@@ -240,8 +249,8 @@ class RouterSecurityScanner:
 
 def render_scanner_ui_html(host: str, findings: List[Finding]) -> str:
     rows = "\n".join(
-        f"<tr><th><code>{f.rule_id}</code> ({f.severity})</th><td><code>{f.cwe}</code></td>"
-        f"<td><strong>{f.title}</strong><br><small>{f.remediation}</small></td><td><code>{f.file_path}</code></td></tr>"
+        f"<tr><th><code>{html.escape(f.rule_id)}</code> ({html.escape(f.severity)})</th><td><code>{html.escape(f.cwe)}</code></td>"
+        f"<td><strong>{html.escape(f.title)}</strong><br><small>{html.escape(f.remediation)}</small></td><td><code>{html.escape(f.file_path)}:{f.line_number}</code></td></tr>"
         for f in findings
     ) or '<tr><td colspan="4">No findings detected yet. Click "Scan My Connected Router" above.</td></tr>'
 
@@ -316,9 +325,20 @@ def render_scanner_ui_html(host: str, findings: List[Finding]) -> str:
     .wrap {{ max-width: 980px; margin: 0 auto; }}
     .hero {{ background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; }}
     .btn {{ background: var(--accent-color); color: #090d16; font-weight: 700; border: none; border-radius: 10px; padding: 12px 18px; cursor: pointer; }}
-    .table-wrap {{ container-type: inline-size; overflow-x: auto; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }}
-    table {{ width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }}
+    .table-wrap {{ container-type: inline-size; overflow: auto; max-inline-size: 100%; max-block-size: min(500px, 80vh); background: var(--card); border: 1px solid var(--border); border-radius: 12px; }}
+    table {{ width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; font-size: 0.9rem; --label-2: "CWE"; --label-3: "Finding & Remediation"; --label-4: "Location"; }}
+    thead {{ position: sticky; inset-block-start: 0; z-index: 1; background: var(--card); }}
+    tbody th {{ position: sticky; inset-inline-start: 0; background: var(--card); }}
     th, td {{ padding: 12px 16px; border-bottom: 1px solid var(--border); }}
+    @container (width < 600px) {{
+      table, thead, tbody, tr, th, td {{ display: block; }}
+      thead {{ display: none; }}
+      tr {{ margin-block-end: 1rem; border: 1px solid var(--border); }}
+      tbody th {{ position: sticky; inset-block-start: 0; z-index: 2; background: var(--card); }}
+      td:nth-child(2)::before {{ content: var(--label-2) ": "; font-weight: 600; }}
+      td:nth-child(3)::before {{ content: var(--label-3) ": "; font-weight: 600; }}
+      td:nth-child(4)::before {{ content: var(--label-4) ": "; font-weight: 600; }}
+    }}
     pre, code {{ color-scheme: dark; accent-color: var(--accent-color); font-family: ui-monospace, monospace; }}
   </style>
 </head>
@@ -353,22 +373,46 @@ def render_scanner_ui_html(host: str, findings: List[Finding]) -> str:
 </html>"""
 
 
-def main() -> None:
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="5g-home-router-scanner",
         description="5G Home Internet Router & ISP Captive-Portal Security Scanner (Verizon 5G, T-Mobile 5G, Xfinity RDK-B)",
     )
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=["ui", "scan-live", "scan-code"],
+        default=None,
+        help="Optional command: ui | scan-live | scan-code",
+    )
+    parser.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="Optional directory path for scan-code (e.g. '.')",
+    )
     parser.add_argument("--bundle-dir", default=None, help="Directory of downloaded router .js/.jst/.cgi/.html files to scan")
     parser.add_argument("--scan-live", action="store_true", help="Safely audit unauthenticated endpoints on a live local router")
-    parser.add_argument("--host", default="192.168.1.1", help="Router IP for --scan-live or --ui (default: 192.168.1.1)")
+    parser.add_argument("--host", default="192.168.1.1", help="Router IP for scan-live or ui (default: 192.168.1.1)")
+    parser.add_argument("--format", choices=["json", "sarif"], default="json", help="Output format for CLI scans: json or sarif")
     parser.add_argument("--sarif-out", default=None, help="Optional file path to export SARIF v2.1.0 report")
     parser.add_argument("--ui", action="store_true", help="Launch Interactive Dark-Mode Web Scanner UI (http://127.0.0.1:8891)")
     parser.add_argument("--bind", default="127.0.0.1", help="HTTP bind address for --ui (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8891, help="HTTP port for --ui (default: 8891)")
+    return parser
 
+
+def main() -> None:
+    parser = build_arg_parser()
     args = parser.parse_args()
 
-    if args.ui:
+    is_ui = args.ui or args.command == "ui"
+    is_scan_live = args.scan_live or args.command == "scan-live"
+    bundle_dir = args.bundle_dir or (args.target if args.command == "scan-code" else None)
+    if args.command == "scan-code" and not bundle_dir:
+        bundle_dir = "."
+
+    if is_ui:
         cached_findings = RouterSecurityScanner.scan_live_gateway(args.host)
 
         class ScannerUIHandler(BaseHTTPRequestHandler):
@@ -407,14 +451,17 @@ def main() -> None:
         return
 
     findings: List[Finding] = []
-    if args.bundle_dir:
-        findings.extend(RouterSecurityScanner.scan_directory(Path(args.bundle_dir)))
-    if args.scan_live:
+    if bundle_dir:
+        findings.extend(RouterSecurityScanner.scan_directory(Path(bundle_dir)))
+    if is_scan_live:
         findings.extend(RouterSecurityScanner.scan_live_gateway(args.host))
-    if not args.bundle_dir and not args.scan_live:
-        parser.error("Specify --bundle-dir <dir>, --scan-live, or --ui.")
+    if not bundle_dir and not is_scan_live:
+        parser.error("Specify scan-code <dir> / --bundle-dir <dir>, scan-live / --scan-live, or ui / --ui.")
 
-    print(json.dumps([asdict(f) for f in findings], indent=2))
+    if args.format == "sarif":
+        print(json.dumps(RouterSecurityScanner.to_sarif(findings), indent=2))
+    else:
+        print(json.dumps([asdict(f) for f in findings], indent=2))
     if args.sarif_out:
         Path(args.sarif_out).write_text(json.dumps(RouterSecurityScanner.to_sarif(findings), indent=2), encoding="utf-8")
 
